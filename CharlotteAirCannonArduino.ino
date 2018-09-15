@@ -8,7 +8,7 @@
 /* I/O Setup */
 ROJoystick usb1(1);         // Joystick #1
 
-// ARDUINO PIN 9 IS RESERVED FOR THE ETHERNET CONTROLLER!!!!!
+// ARDUINO PIN 10 IS RESERVED FOR THE ETHERNET CONTROLLER!!!!!
 
 ROPWM compressor(0);
 RODigitalIO compressorPressureSwitch(1, INPUT_PULLUP); // Low means low pressure
@@ -16,7 +16,7 @@ RODigitalIO compressorPressureSwitch(1, INPUT_PULLUP); // Low means low pressure
 boolean compressorOverride = true;
 boolean compressorState = false;
 boolean compressorButtonReleased = true;
-int compressorTimeout = 12000; // Milliseconds
+int compressorTimeout = 10000; // Milliseconds
 ROTimer compressorShutoffTimer;
 
 ROPWM leftDriveMotor(2);
@@ -45,7 +45,7 @@ void setup()
 
   leftDriveMotor.attach();
   rightDriveMotor.attach();
-  
+
 }
 
 
@@ -53,14 +53,19 @@ void setup()
  * should live here that allows the robot to operate
  */
 void enabled() {
+  // Motor Axes
+  int forwardPower = usb1.leftY();
+  int turnPower = map(usb1.leftX(), 0, 255, 255, 0); // Inverted
+  int cannonLiftPower = usb1.rightY();
+
   // ArcadeDrive formulas
   int leftDrivePower = constrain((usb1.leftY() + usb1.leftX()), 0, 255);
   int rightDrivePower = constrain((usb1.leftY() - usb1.leftX()), 0, 255);
 
+  // Command Buttons
   boolean armCannonButton = usb1.btnA();
   boolean leftCannonFireButton = usb1.btnLShoulder();
   boolean rightCannonFireButton = usb1.btnRShoulder();
-  int cannonLiftPower = usb1.rightY();
 
   // Compressor Control
   if(!compressorOverride) {
@@ -76,22 +81,29 @@ void enabled() {
   } else {
     boolean compressorToggleButton = usb1.btnY();
     
+    //If pressing toggle and previously released it
     if(compressorToggleButton && compressorButtonReleased) {
       if(compressorState) {
+        // Turn Compressor Off
         compressor.write(127);
         compressorState = false;
       } else {
+        // Turn Compressor On
         compressor.write(255);
         compressorState = true;
+        // Setup Cutoff Timer
         compressorShutoffTimer.queue(compressorTimeout);
       }
+      // We need to release the button
       compressorButtonReleased = false;
     }
     if(!compressorToggleButton) {
+      // Button has been released
       compressorButtonReleased = true;
     }
 
     if(compressorShutoffTimer.ready()) {
+      // Shutoff Compressor
       compressor.write(127);
       compressorState = false;
     }
@@ -99,20 +111,23 @@ void enabled() {
   
   // Cannon Control
   if(armCannonButton && armButtonReleased) {
-    // Cannon will fire if the "ARMING" button has been re-pressed and 
-    // if the cannon has not fired for the set amount of time
+    // Cannon can only fire if arming button has been reset and pressed
     if(leftCannonFireButton) {
+      // Fire Left Cannon and setup cutoff
       leftCannonSolenoid.write(255);
       cannonShutoffTimer.queue(cannonFireTime);
       armButtonReleased = false;
     }
     if(rightCannonFireButton) {
+      // Fire Left Cannon and setup cutoff
       rightCannonSolenoid.write(255);
       cannonShutoffTimer.queue(cannonFireTime);
       armButtonReleased = false;
     }
+    //TODO Move Controls into functions to reduce code re-use
   }
   if(!armCannonButton) {
+    // Button has been relased
     armButtonReleased = true;
   }
 
