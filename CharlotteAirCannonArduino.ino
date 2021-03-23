@@ -69,8 +69,8 @@ void setup()
  */
 void enabled() {
   // Drivetrain Control
-  uint8_t driveSpeed = driverController.leftY();
-  uint8_t driveRotation = map(driverController.leftX(), 255, 0, 0, 255); // inverted
+  uint8_t driveSpeed = map(driverController.leftY(), 255, 0, 0, 255); // inverted
+  uint8_t driveRotation = driverController.leftX();
 
   uint8_t leftDrivePower = constrain((driveSpeed + driveRotation), 0, 255);
   uint8_t rightDrivePower = constrain((driveSpeed - driveRotation), 0, 255);
@@ -80,7 +80,8 @@ void enabled() {
 
 
   // Cannon Lift Control
-  uint8_t cannonLiftSpeed = constrain(driverController.rightY(),cannonLiftMinSpeed,cannonLiftMaxSpeed);
+  uint8_t cannonLiftAxis = map(driverController.rightY(), 255, 0, 0, 255); // inverted
+  uint8_t cannonLiftSpeed = constrain(cannonLiftAxis, cannonLiftMinSpeed, cannonLiftMaxSpeed);
   
   cannonLiftMotor.write(cannonLiftSpeed);
 
