@@ -3,49 +3,64 @@
 #include <EEPROM.h>
 #include <Servo.h>
 #include <RobotOpenHA.h>
+//TODO WS2812B LED Strip Drive
 
+// Controllers
+uint8_t driverControllerUSB = 1;
 
-/* I/O Setup */
-ROJoystick usb1(1);         // Joystick #1
-
+// PWM + Digital
 // ARDUINO PIN 10 IS RESERVED FOR THE ETHERNET CONTROLLER!!!!!
+uint8_t leftDriveMotorsPWM = 2;
+uint8_t rightDriveMotorsPWM = 3;
+uint8_t cannonLiftMotorPWM = 4;
 
-ROPWM compressor(0);
-RODigitalIO compressorPressureSwitch(1, INPUT_PULLUP); // Low means low pressure
+uint8_t compressorRelayDIO = 5;
+uint8_t leftCannonRelayDIO = 6;
+uint8_t rightCannonRelayDIO = 7;
 
-boolean compressorOverride = true;
-boolean compressorState = false;
-boolean compressorButtonReleased = true;
-int compressorTimeout = 10000; // Milliseconds
-ROTimer compressorShutoffTimer;
+// Analog
+uint8_t voltageDividerAnalog = 0;
+uint8_t pressureTransducerAnalog = 1;
 
-ROPWM leftDriveMotor(2);
-ROPWM rightDriveMotor(3);
-ROPWM cannonLiftMotor(4);
 
-ROPWM leftCannonSolenoid(5);
-ROPWM rightCannonSolenoid(6);
+// I/O Objects
+ROJoystick driverController(driverControllerUSB);
 
-boolean armButtonReleased = true;
-int cannonFireTime = 200; // Milliseconds
-ROTimer cannonShutoffTimer;
+ROPWM leftDriveMotor(leftDriveMotorsPWM);
+ROPWM rightDriveMotor(rightDriveMotorsPWM);
+ROPWM cannonLiftMotor(cannonLiftMotorPWM);
+
+RODigitalIO compressorRelay(compressorRelayDIO, OUTPUT);
+RODigitalIO leftCannonRelay(leftCannonRelayDIO, OUTPUT);
+RODigitalIO rightCannonRelay(rightCannonRelayDIO, OUTPUT);
+
+ROAnalog voltageDivider(voltageDividerAnalog);
+ROAnalog pressureTransducer(pressureTransducerAnalog);
+
+
+// Compressor Variables
+uint8_t compressorMinPressure = 60; //psi
+uint8_t compressorMaxPressure = 80; //psi
+
+// Cannon Lift Variables
+uint8_t cannonLiftMinSpeed = 64; // -0.5
+uint8_t cannonLiftMaxSpeed = 192; // 0.5
+//TODO Impliment Limit Switches(?)
+
+
+// Voltage Divider Variables
+uint8_t voltageDividerMinReading = 0; // volts
+uint8_t voltageDividerMaxReading = 25; // volts
+
+// Pressure Transducer Variables
+uint8_t pressureTransducerMinReading = 0; // psi
+uint8_t pressureTransducerMaxReading = 150; // psi
+
 
 void setup()
 {
   /* Initiate comms */
-  RobotOpen.begin(&enabled, &disabled, &timedtasks);
-
-  compressor.attach();
-
-  compressorShutoffTimer.queue(0);
-  leftCannonSolenoid.attach();
-  rightCannonSolenoid.attach();
-
-  cannonLiftMotor.attach();
-
-  leftDriveMotor.attach();
-  rightDriveMotor.attach();
-
+  RobotOpen.begin(&enabled, &disabled, &timedtasks);  
 }
 
 
@@ -53,96 +68,37 @@ void setup()
  * should live here that allows the robot to operate
  */
 void enabled() {
-  // Motor Axes
-  int forwardPower = usb1.leftY();
-  int turnPower = map(usb1.leftX(), 0, 255, 255, 0); // Inverted
-  int cannonLiftPower = usb1.rightY();
+  // Drivetrain Control
+  uint8_t driveSpeed = driverController.leftY();
+  uint8_t driveRotation = map(driverController.leftX(), 255, 0, 0, 255); // inverted
 
-  // ArcadeDrive formulas
-  int leftDrivePower = constrain((usb1.leftY() + usb1.leftX()), 0, 255);
-  int rightDrivePower = constrain((usb1.leftY() - usb1.leftX()), 0, 255);
+  uint8_t leftDrivePower = constrain((driveSpeed + driveRotation), 0, 255);
+  uint8_t rightDrivePower = constrain((driveSpeed - driveRotation), 0, 255);
 
-  // Command Buttons
-  boolean armCannonButton = usb1.btnA();
-  boolean leftCannonFireButton = usb1.btnLShoulder();
-  boolean rightCannonFireButton = usb1.btnRShoulder();
-
-  // Compressor Control
-  if(!compressorOverride) {
-    boolean atPressure = compressorPressureSwitch.read();
-
-    // Compressor turns ON when PressureSwitch is OFF.
-    if(atPressure) {
-      compressor.write(127);
-    } else {
-      compressor.write(255);
-    }
-
-  } else {
-    boolean compressorToggleButton = usb1.btnY();
-    
-    //If pressing toggle and previously released it
-    if(compressorToggleButton && compressorButtonReleased) {
-      if(compressorState) {
-        // Turn Compressor Off
-        compressor.write(127);
-        compressorState = false;
-      } else {
-        // Turn Compressor On
-        compressor.write(255);
-        compressorState = true;
-        // Setup Cutoff Timer
-        compressorShutoffTimer.queue(compressorTimeout);
-      }
-      // We need to release the button
-      compressorButtonReleased = false;
-    }
-    if(!compressorToggleButton) {
-      // Button has been released
-      compressorButtonReleased = true;
-    }
-
-    if(compressorShutoffTimer.ready()) {
-      // Shutoff Compressor
-      compressor.write(127);
-      compressorState = false;
-    }
-  }
-  
-  // Cannon Control
-  if(armCannonButton && armButtonReleased) {
-    // Cannon can only fire if arming button has been reset and pressed
-    if(leftCannonFireButton) {
-      // Fire Left Cannon and setup cutoff
-      leftCannonSolenoid.write(255);
-      cannonShutoffTimer.queue(cannonFireTime);
-      armButtonReleased = false;
-    }
-    if(rightCannonFireButton) {
-      // Fire Left Cannon and setup cutoff
-      rightCannonSolenoid.write(255);
-      cannonShutoffTimer.queue(cannonFireTime);
-      armButtonReleased = false;
-    }
-    //TODO Move Controls into functions to reduce code re-use
-  }
-  if(!armCannonButton) {
-    // Button has been relased
-    armButtonReleased = true;
-  }
-
-  // Cannons will shutoff after timer expires
-  if(cannonShutoffTimer.ready()) {
-    leftCannonSolenoid.write(127);
-    rightCannonSolenoid.write(127);
-  }
-
-  // Turret Lift Control
-  cannonLiftMotor.write(cannonLiftPower);
-
-  // Drive Control
   leftDriveMotor.write(leftDrivePower);
   rightDriveMotor.write(rightDrivePower);
+
+
+  // Cannon Lift Control
+  uint8_t cannonLiftSpeed = constrain(driverController.rightY(),cannonLiftMinSpeed,cannonLiftMaxSpeed);
+  
+  cannonLiftMotor.write(cannonLiftSpeed);
+
+  
+  // Compressor Control
+  uint8_t pressure = map(pressureTransducer.read(), 0, 1023, pressureTransducerMinReading, pressureTransducerMaxReading);
+  
+  if(pressure >= compressorMaxPressure) {
+    compressorRelay.off();
+    RODashboard.publish("Compressor", true);
+  } else if(pressure <= compressorMinPressure) {
+    compressorRelay.on();
+    RODashboard.publish("Compressor", false);
+  }
+
+
+  // TODO Cannon Control State Machine
+  
 }
 
 
@@ -150,17 +106,18 @@ void enabled() {
 void disabled() {
   // safety code
 
-  // Shut-off Compressor
-  compressor.write(127);
-
   // Neutral-Out PWMs
   leftDriveMotor.write(127);
   rightDriveMotor.write(127);
   cannonLiftMotor.write(127);
 
   // Close Solenoids
-  leftCannonSolenoid.write(127);
-  rightCannonSolenoid.write(127);
+  leftCannonRelay.off();
+  rightCannonRelay.off();
+
+  // Turn off Compressor
+  compressorRelay.off();
+  RODashboard.publish("Compressor", false);
 
 }
 
@@ -169,7 +126,9 @@ void disabled() {
  * This is also a good spot to put driver station publish code
  */
 void timedtasks() {
-  RODashboard.publish("Uptime Seconds", ROStatus.uptimeSeconds());
+  RODashboard.publish("Uptime (s)", ROStatus.uptimeSeconds());
+  RODashboard.publish("Voltage (v)", map(voltageDivider.read(), 0, 1023, voltageDividerMinReading, voltageDividerMaxReading));
+  RODashboard.publish("Pressure (psi)", map(pressureTransducer.read(), 0, 1023, pressureTransducerMinReading, pressureTransducerMaxReading));
 }
 
 
