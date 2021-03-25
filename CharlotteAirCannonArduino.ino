@@ -61,8 +61,8 @@ uint8_t cannonLiftMaxSpeed = 192; // 0.5
 // TODO Impliment Limit Switches(?)
 
 // Cannon Variables
-bool cannonLeftBarrelArmedButton() { return driverController.btnA(); }
-bool cannonRightBarrelArmedButton() { return driverController.btnB(); }
+bool leftCannonArmedButton() { return driverController.btnA(); }
+bool rightCannonArmedButton() { return driverController.btnB(); }
 bool cannonTriggerButton() { return (driverController.lTrigger() == 255); }
 
 
