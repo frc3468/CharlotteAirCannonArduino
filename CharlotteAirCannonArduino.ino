@@ -1,9 +1,15 @@
+/*
 #include <SPI.h>
 #include <Ethernet.h>
 #include <EEPROM.h>
 #include <Servo.h>
+*/
+
 #include <RobotOpenHA.h>
 //TODO WS2812B LED Strip Drive
+
+#define ANALOG_RESOLUTION 1024 // 10-bit
+#define PWM_NEUTRAL 127 // 0.0
 
 // Controllers
 uint8_t driverControllerUSB = 1;
@@ -37,24 +43,36 @@ RODigitalIO rightCannonRelay(rightCannonRelayDIO, OUTPUT);
 ROAnalog voltageDivider(voltageDividerAnalog);
 ROAnalog pressureTransducer(pressureTransducerAnalog);
 
+// Drivetrain Variables
+uint8_t driveSpeedAxis() { return map(driverController.leftY(), 255, 0, 0, 255); /* inverted*/ }
+uint8_t driveRotationAxis() { return driverController.leftX(); }
+uint8_t driveMinSpeed = 0; // -1.0
+uint8_t driveMaxSpeed = 255; // 1.0
 
 // Compressor Variables
 uint8_t compressorMinPressure = 60; //psi
 uint8_t compressorMaxPressure = 80; //psi
+// TODO Impliment Cycle Time Limits(?)
 
 // Cannon Lift Variables
+uint8_t cannonLiftAxis() { return map(driverController.rightY(), 255, 0, 0, 255); /* inverted*/ }
 uint8_t cannonLiftMinSpeed = 64; // -0.5
 uint8_t cannonLiftMaxSpeed = 192; // 0.5
-//TODO Impliment Limit Switches(?)
+// TODO Impliment Limit Switches(?)
+
+// Cannon Variables
+bool cannonLeftBarrelArmedButton() { return driverController.btnA(); }
+bool cannonRightBarrelArmedButton() { return driverController.btnB(); }
+bool cannonTriggerButton() { return (driverController.lTrigger() == 255); }
 
 
 // Voltage Divider Variables
-uint8_t voltageDividerMinReading = 0; // volts
 uint8_t voltageDividerMaxReading = 25; // volts
+float voltageDividerStep = (float)voltageDividerMaxReading/ANALOG_RESOLUTION;
 
 // Pressure Transducer Variables
-uint8_t pressureTransducerMinReading = 0; // psi
 uint8_t pressureTransducerMaxReading = 150; // psi
+float pressureTransducerStep = (float)pressureTransducerMaxReading/ANALOG_RESOLUTION;
 
 
 void setup()
@@ -69,25 +87,23 @@ void setup()
  */
 void enabled() {
   // Drivetrain Control
-  uint8_t driveSpeed = map(driverController.leftY(), 255, 0, 0, 255); // inverted
-  uint8_t driveRotation = driverController.leftX();
+  uint8_t driveSpeed = driveSpeedAxis();
+  uint8_t driveRotation = driveRotationAxis();
+  
+  uint8_t leftDriveSpeed = constrain((driveSpeed + driveRotation), driveMinSpeed, driveMaxSpeed);
+  uint8_t rightDriveSpeed = constrain((driveSpeed - driveRotation), driveMinSpeed, driveMaxSpeed);
 
-  uint8_t leftDrivePower = constrain((driveSpeed + driveRotation), 0, 255);
-  uint8_t rightDrivePower = constrain((driveSpeed - driveRotation), 0, 255);
-
-  leftDriveMotor.write(leftDrivePower);
-  rightDriveMotor.write(rightDrivePower);
+  leftDriveMotor.write(leftDriveSpeed);
+  rightDriveMotor.write(rightDriveSpeed);
 
 
   // Cannon Lift Control
-  uint8_t cannonLiftAxis = map(driverController.rightY(), 255, 0, 0, 255); // inverted
-  uint8_t cannonLiftSpeed = constrain(cannonLiftAxis, cannonLiftMinSpeed, cannonLiftMaxSpeed);
-  
+  uint8_t cannonLiftSpeed = constrain(cannonLiftAxis(), cannonLiftMinSpeed, cannonLiftMaxSpeed);
   cannonLiftMotor.write(cannonLiftSpeed);
 
   
   // Compressor Control
-  uint8_t pressure = map(pressureTransducer.read(), 0, 1023, pressureTransducerMinReading, pressureTransducerMaxReading);
+  float pressure = pressureTransducer.read()*pressureTransducerStep;
   
   if(pressure >= compressorMaxPressure) {
     compressorRelay.off();
@@ -108,9 +124,9 @@ void disabled() {
   // safety code
 
   // Neutral-Out PWMs
-  leftDriveMotor.write(127);
-  rightDriveMotor.write(127);
-  cannonLiftMotor.write(127);
+  leftDriveMotor.write(PWM_NEUTRAL);
+  rightDriveMotor.write(PWM_NEUTRAL);
+  cannonLiftMotor.write(PWM_NEUTRAL);
 
   // Close Solenoids
   leftCannonRelay.off();
@@ -128,8 +144,8 @@ void disabled() {
  */
 void timedtasks() {
   RODashboard.publish("Uptime (s)", ROStatus.uptimeSeconds());
-  RODashboard.publish("Voltage (v)", map(voltageDivider.read(), 0, 1023, voltageDividerMinReading, voltageDividerMaxReading));
-  RODashboard.publish("Pressure (psi)", map(pressureTransducer.read(), 0, 1023, pressureTransducerMinReading, pressureTransducerMaxReading));
+  RODashboard.publish("Voltage (v)", (voltageDivider.read()*voltageDividerStep));
+  RODashboard.publish("Pressure (psi)", (pressureTransducer.read()*pressureTransducerStep));
 }
 
 
