@@ -12,21 +12,21 @@
 #define PWM_NEUTRAL 127 // 0.0
 
 // Controllers
-uint8_t driverControllerUSB = 1;
+const uint8_t driverControllerUSB = 1;
 
 // PWM + Digital
 // ARDUINO PIN 10 IS RESERVED FOR THE ETHERNET CONTROLLER!!!!!
-uint8_t leftDriveMotorsPWM = 2;
-uint8_t rightDriveMotorsPWM = 3;
-uint8_t cannonLiftMotorPWM = 4;
+const uint8_t leftDriveMotorsPWM = 2;
+const uint8_t rightDriveMotorsPWM = 3;
+const uint8_t cannonLiftMotorPWM = 4;
 
-uint8_t compressorRelayDIO = 5;
-uint8_t leftCannonRelayDIO = 6;
-uint8_t rightCannonRelayDIO = 7;
+const uint8_t compressorRelayDIO = 5;
+const uint8_t leftCannonRelayDIO = 6;
+const uint8_t rightCannonRelayDIO = 7;
 
 // Analog
-uint8_t voltageDividerAnalog = 0;
-uint8_t pressureTransducerAnalog = 1;
+const uint8_t voltageDividerAnalog = 0;
+const uint8_t pressureTransducerAnalog = 1;
 
 
 // I/O Objects
@@ -46,32 +46,41 @@ ROAnalog pressureTransducer(pressureTransducerAnalog);
 // Drivetrain Variables
 uint8_t driveSpeedAxis() { return map(driverController.leftY(), 255, 0, 0, 255); /* inverted*/ }
 uint8_t driveRotationAxis() { return driverController.leftX(); }
-uint8_t driveMinSpeed = 0; // -1.0
-uint8_t driveMaxSpeed = 255; // 1.0
+const uint8_t driveMinSpeed = 0; // -1.0
+const uint8_t driveMaxSpeed = 255; // 1.0
 
 // Compressor Variables
-uint8_t compressorMinPressure = 60; //psi
-uint8_t compressorMaxPressure = 80; //psi
+const uint8_t compressorMinPressure = 60; //psi
+const uint8_t compressorMaxPressure = 80; //psi
 // TODO Impliment Cycle Time Limits(?)
 
 // Cannon Lift Variables
 uint8_t cannonLiftAxis() { return map(driverController.rightY(), 255, 0, 0, 255); /* inverted*/ }
-uint8_t cannonLiftMinSpeed = 64; // -0.5
-uint8_t cannonLiftMaxSpeed = 192; // 0.5
+const uint8_t cannonLiftMinSpeed = 64; // -0.5
+const uint8_t cannonLiftMaxSpeed = 192; // 0.5
 // TODO Impliment Limit Switches(?)
 
 // Cannon Variables
 bool leftCannonArmedButton() { return driverController.btnA(); }
 bool rightCannonArmedButton() { return driverController.btnB(); }
 bool cannonTriggerButton() { return (driverController.lTrigger() == 255); }
+const uint16_t cannonChargeTime = 5000; //milliseconds
+const uint16_t cannonFireTime = 150; // milliseconds
+const uint8_t unarmedCannonID = 0x00;
+const uint8_t leftCannonID = 0x01;
+const uint8_t rightCannonID = 0x02;
+uint8_t cannonsArmed = unarmedCannonID;
+uint8_t cannonsLock = unarmedCannonID;
+ROTimer cannonChargeTimer;
+ROTimer cannonShutoffTimer;
 
 
 // Voltage Divider Variables
-uint8_t voltageDividerMaxReading = 25; // volts
+const uint8_t voltageDividerMaxReading = 25; // volts
 float voltageDividerStep = (float)voltageDividerMaxReading/ANALOG_RESOLUTION;
 
 // Pressure Transducer Variables
-uint8_t pressureTransducerMaxReading = 150; // psi
+const uint8_t pressureTransducerMaxReading = 150; // psi
 float pressureTransducerStep = (float)pressureTransducerMaxReading/ANALOG_RESOLUTION;
 
 
@@ -113,8 +122,53 @@ void enabled() {
     RODashboard.publish("Compressor", false);
   }
 
+  // Cannon Arming Buttons
+  if(leftCannonArmedButton()) {
+    cannonsArmed = cannonsArmed | leftCannonID;
+  } else {
+    cannonsArmed = cannonsArmed & ~leftCannonID;
+  }
+  
+  if(rightCannonArmedButton()) {
+    cannonsArmed = cannonsArmed | rightCannonID;
+  } else {
+    cannonsArmed = cannonsArmed & ~rightCannonID;
+  }
 
-  // TODO Cannon Control State Machine
+  // Cannon Trigger Pulled, Queue Charge Timer
+  if(cannonTriggerButton() && cannonsArmed && !cannonsLock) {
+    cannonChargeTimer.queue(cannonChargeTime);
+    cannonsLock = cannonsArmed;
+  }
+
+  // Cancel Charge Sequence if anything changes after lock set
+  if(cannonChargeTimer.isActive()) {
+    if(!cannonTriggerButton() || cannonsArmed != cannonsLock) {
+      cannonChargeTimer.cancel();
+    }
+  }
+
+  // Fire the Armed Cannons, Queue Shutoff Timer
+  if(cannonChargeTimer.ready()) {
+    if(cannonsLock & leftCannonID) {
+      leftCannonRelay.on();
+    }
+    if(cannonsLock & rightCannonID) {
+      rightCannonRelay.on();
+    }
+    cannonShutoffTimer.queue(cannonFireTime);
+  }
+
+  // Shutoff Cannons
+  if(cannonShutoffTimer.ready()) {
+    leftCannonRelay.off();
+    rightCannonRelay.off();
+  }
+
+  // Reset Arming Lock when Trigger is Released
+  if(cannonsLock && !cannonTriggerButton()) {
+    cannonsLock = unarmedCannonID;
+  }
   
 }
 
