@@ -61,8 +61,8 @@ const uint8_t cannonLiftMaxSpeed = 192; // 0.5
 // TODO Impliment Limit Switches(?)
 
 // Cannon Variables
-bool leftCannonArmedButton() { return driverController.btnA(); }
-bool rightCannonArmedButton() { return driverController.btnB(); }
+bool leftCannonArmButton() { return driverController.btnA(); }
+bool rightCannonArmButton() { return driverController.btnB(); }
 bool cannonTriggerButton() { return (driverController.lTrigger() == 255); }
 const uint16_t cannonChargeTime = 5000; //milliseconds
 const uint16_t cannonFireTime = 150; // milliseconds
@@ -123,13 +123,13 @@ void enabled() {
   }
 
   // Cannon Arming Buttons
-  if(leftCannonArmedButton()) {
+  if(leftCannonArmButton()) {
     cannonsArmed = cannonsArmed | leftCannonID;
   } else {
     cannonsArmed = cannonsArmed & ~leftCannonID;
   }
   
-  if(rightCannonArmedButton()) {
+  if(rightCannonArmButton()) {
     cannonsArmed = cannonsArmed | rightCannonID;
   } else {
     cannonsArmed = cannonsArmed & ~rightCannonID;
