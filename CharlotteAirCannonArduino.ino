@@ -44,8 +44,8 @@ ROAnalog voltageDivider(voltageDividerAnalog);
 ROAnalog pressureTransducer(pressureTransducerAnalog);
 
 // Drivetrain Variables
-uint8_t driveSpeedAxis() { return map(driverController.leftY(), 255, 0, 0, 255); /* inverted*/ }
-uint8_t driveRotationAxis() { return driverController.leftX(); }
+int8_t driveSpeedAxis() { return map(driverController.leftY(), 255, 0, -128, 127); /* inverted */ }
+int8_t driveRotationAxis() { return map(driverController.leftX(),0, 255, -128, 127); }
 const uint8_t driveMinSpeed = 0; // -1.0
 const uint8_t driveMaxSpeed = 255; // 1.0
 
@@ -88,6 +88,10 @@ void setup()
 {
   /* Initiate comms */
   RobotOpen.begin(&enabled, &disabled, &timedtasks);  
+
+  leftDriveMotor.attach();
+  rightDriveMotor.attach();
+  cannonLiftMotor.attach();
 }
 
 
@@ -96,12 +100,12 @@ void setup()
  */
 void enabled() {
   // Drivetrain Control
-  uint8_t driveSpeed = driveSpeedAxis();
-  uint8_t driveRotation = driveRotationAxis();
+  int8_t driveSpeed = driveSpeedAxis();
+  int8_t driveRotation = driveRotationAxis();
   
-  uint8_t leftDriveSpeed = constrain((driveSpeed + driveRotation), driveMinSpeed, driveMaxSpeed);
-  uint8_t rightDriveSpeed = constrain((driveSpeed - driveRotation), driveMinSpeed, driveMaxSpeed);
-
+  uint8_t leftDriveSpeed = constrain(map(driveSpeed+driveRotation, -128, 127, 255, 0), driveMinSpeed, driveMaxSpeed);
+  uint8_t rightDriveSpeed = constrain(map(driveSpeed-driveRotation, -128, 127, 0, 255), driveMinSpeed, driveMaxSpeed);
+  
   leftDriveMotor.write(leftDriveSpeed);
   rightDriveMotor.write(rightDriveSpeed);
 
