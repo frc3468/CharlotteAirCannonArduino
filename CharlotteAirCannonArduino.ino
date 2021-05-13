@@ -20,13 +20,13 @@ const uint8_t leftDriveMotorsPWM = 2;
 const uint8_t rightDriveMotorsPWM = 3;
 const uint8_t cannonLiftMotorPWM = 4;
 
-const uint8_t compressorRelayDIO = 5;
-const uint8_t leftCannonRelayDIO = 6;
-const uint8_t rightCannonRelayDIO = 7;
+const uint8_t compressorRelayDIO = 7;
+const uint8_t leftCannonRelayDIO = 5;
+const uint8_t rightCannonRelayDIO = 6;
 
 // Analog
-const uint8_t voltageDividerAnalog = 0;
-const uint8_t pressureTransducerAnalog = 1;
+const uint8_t voltageDividerAnalog = 1;
+const uint8_t pressureTransducerAnalog = 0;
 
 
 // I/O Objects
@@ -46,8 +46,8 @@ ROAnalog pressureTransducer(pressureTransducerAnalog);
 // Drivetrain Variables
 int8_t driveSpeedAxis() { return map(driverController.leftY(), 255, 0, -128, 127); /* inverted */ }
 int8_t driveRotationAxis() { return map(driverController.leftX(),0, 255, -128, 127); }
-const uint8_t driveMinSpeed = 0; // -1.0
-const uint8_t driveMaxSpeed = 255; // 1.0
+const int8_t driveMinSpeed = -128;
+const int8_t driveMaxSpeed = 127;
 
 // Compressor Variables
 const uint8_t compressorMinPressure = 60; //psi
@@ -59,6 +59,8 @@ uint8_t cannonLiftAxis() { return map(driverController.rightY(), 255, 0, 0, 255)
 const uint8_t cannonLiftMinSpeed = 64; // -0.5
 const uint8_t cannonLiftMaxSpeed = 192; // 0.5
 // TODO Impliment Limit Switches(?)
+//     Actually, these could be automatic via the Spark Motor Controller.
+//     Just need to wire them NO with the GND Pin to the LMT Switches headers
 
 // Cannon Variables
 bool leftCannonArmButton() { return driverController.btnA(); }
@@ -103,8 +105,8 @@ void enabled() {
   int8_t driveSpeed = driveSpeedAxis();
   int8_t driveRotation = driveRotationAxis();
   
-  uint8_t leftDriveSpeed = constrain(map(driveSpeed+driveRotation, -128, 127, 255, 0), driveMinSpeed, driveMaxSpeed);
-  uint8_t rightDriveSpeed = constrain(map(driveSpeed-driveRotation, -128, 127, 0, 255), driveMinSpeed, driveMaxSpeed);
+  uint8_t leftDriveSpeed = map(constrain(driveSpeed+driveRotation, driveMinSpeed, driveMaxSpeed), -128, 127, 255, 0);
+  uint8_t rightDriveSpeed = map(constrain(driveSpeed-driveRotation, driveMinSpeed, driveMaxSpeed), -128, 127, 0, 255);
   
   leftDriveMotor.write(leftDriveSpeed);
   rightDriveMotor.write(rightDriveSpeed);
