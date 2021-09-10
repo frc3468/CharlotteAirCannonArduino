@@ -63,7 +63,7 @@ bool compressorLowerSetpointButtonLastState = false;
 uint8_t compressorPressureSetpoint = 60; //psi
 uint8_t compressorDebounceCounter = 0;
 bool compressorCutoffButtonLastState = false;
-bool compressorCutoffState = false;
+bool compressorCutoff = false;
 
 // TODO Impliment Cycle Time Limits(?)
 
@@ -149,14 +149,14 @@ void enabled() {
 
   // Compressor Cutoff Control
   if(compressorCutoffButton() && !compressorCutoffButtonLastState) {
-    compressorCutoffState = !compressorCutoffState;
+    compressorCutoff = !compressorCutoff;
   }
   compressorCutoffButtonLastState = compressorCutoffButton();
   
   // Compressor Control
   float pressure = pressureTransducer.read()*pressureTransducerStep;
 
-  if(!compressorCutoffState) {
+  if(!compressorCutoff) {
     if(pressure <= compressorPressureSetpoint) {
       compressorRelay.on();
       compressorDebounceCounter = 0;
@@ -255,7 +255,7 @@ void timedtasks() {
   RODashboard.publish("Target Pressure (psi)", compressorPressureSetpoint);
   
   RODashboard.publish("Compressor State", compressorRelay.read());
-  RODashboard.publish("Compressor Killswitch", compressorCutoffState);
+  RODashboard.publish("Compressor Killswitch", compressorCutoff);
   
 }
 
