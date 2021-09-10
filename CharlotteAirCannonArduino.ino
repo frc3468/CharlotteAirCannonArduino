@@ -15,18 +15,19 @@
 const uint8_t driverControllerUSB = 1;
 
 // PWM + Digital
+// ARDUINO PINS 0 & 1 ARE RESERVED FOR THE SERIAL INTERFACE!!!
 // ARDUINO PIN 10 IS RESERVED FOR THE ETHERNET CONTROLLER!!!!!
 const uint8_t leftDriveMotorsPWM = 2;
 const uint8_t rightDriveMotorsPWM = 3;
 const uint8_t cannonLiftMotorPWM = 4;
 
-const uint8_t compressorRelayDIO = 7;
 const uint8_t leftCannonRelayDIO = 5;
 const uint8_t rightCannonRelayDIO = 6;
+const uint8_t compressorRelayDIO = 7;
 
 // Analog
-const uint8_t voltageDividerAnalog = 1;
 const uint8_t pressureTransducerAnalog = 0;
+const uint8_t voltageDividerAnalog = 1;
 
 
 // I/O Objects
@@ -50,12 +51,24 @@ const int8_t driveMinSpeed = -128;
 const int8_t driveMaxSpeed = 127;
 
 // Compressor Variables
-const uint8_t compressorMinPressure = 60; //psi
-const uint8_t compressorMaxPressure = 80; //psi
+bool compressorRaiseSetpointButton() { return driverController.dPadUp(); }
+bool compressorLowerSetpointButton() { return driverController.dPadDown(); }
+bool compressorCutoffButton() { return driverController.btnRShoulder(); }
+const uint8_t compressorPressureSetpointStep = 5; //psi
+const uint8_t compressorPressureMin = 20; //psi
+const uint8_t compressorPressureMax = 100; //psi
+const uint8_t compressorDebounceMagnitude = 10;
+bool compressorRaiseSetpointButtonLastState = false;
+bool compressorLowerSetpointButtonLastState = false;
+uint8_t compressorPressureSetpoint = 60; //psi
+uint8_t compressorDebounceCounter = 0;
+bool compressorCutoffButtonLastState = false;
+bool compressorCutoffState = false;
+
 // TODO Impliment Cycle Time Limits(?)
 
 // Cannon Lift Variables
-uint8_t cannonLiftAxis() { return map(driverController.rightY(), 255, 0, 0, 255); /* inverted*/ }
+uint8_t cannonLiftAxis() { return map(driverController.rightY(), 0, 255, 0, 255); }
 const uint8_t cannonLiftMinSpeed = 64; // -0.5
 const uint8_t cannonLiftMaxSpeed = 192; // 0.5
 // TODO Impliment Limit Switches(?)
@@ -79,11 +92,11 @@ ROTimer cannonShutoffTimer;
 
 // Voltage Divider Variables
 const uint8_t voltageDividerMaxReading = 25; // volts
-float voltageDividerStep = (float)voltageDividerMaxReading/ANALOG_RESOLUTION;
+const float voltageDividerStep = (float)voltageDividerMaxReading/ANALOG_RESOLUTION;
 
 // Pressure Transducer Variables
 const uint8_t pressureTransducerMaxReading = 150; // psi
-float pressureTransducerStep = (float)pressureTransducerMaxReading/ANALOG_RESOLUTION;
+const float pressureTransducerStep = (float)pressureTransducerMaxReading/ANALOG_RESOLUTION;
 
 
 void setup()
@@ -116,17 +129,46 @@ void enabled() {
   uint8_t cannonLiftSpeed = constrain(cannonLiftAxis(), cannonLiftMinSpeed, cannonLiftMaxSpeed);
   cannonLiftMotor.write(cannonLiftSpeed);
 
+  // Compressor Setpoint Control
+  if(compressorRaiseSetpointButton() && !compressorRaiseSetpointButtonLastState) {
+    compressorPressureSetpoint += compressorPressureSetpointStep;
+    if(compressorPressureSetpoint > compressorPressureMax) {
+      compressorPressureSetpoint = compressorPressureMax;
+    }
+  }
+  
+  if(compressorLowerSetpointButton() && !compressorLowerSetpointButtonLastState) {
+    compressorPressureSetpoint -= compressorPressureSetpointStep;
+    if(compressorPressureSetpoint < compressorPressureMin) {
+      compressorPressureSetpoint = compressorPressureMin;
+    }
+  }
+
+  compressorRaiseSetpointButtonLastState = compressorRaiseSetpointButton();
+  compressorLowerSetpointButtonLastState = compressorLowerSetpointButton();
+
+  // Compressor Cutoff Control
+  if(compressorCutoffButton() && !compressorCutoffButtonLastState) {
+    compressorCutoffState = !compressorCutoffState;
+  }
+  compressorCutoffButtonLastState = compressorCutoffButton();
   
   // Compressor Control
   float pressure = pressureTransducer.read()*pressureTransducerStep;
-  
-  if(pressure >= compressorMaxPressure) {
+
+  if(!compressorCutoffState) {
+    if(pressure <= compressorPressureSetpoint) {
+      compressorRelay.on();
+      compressorDebounceCounter = 0;
+    } else if(++compressorDebounceCounter >= compressorDebounceMagnitude) {
+      compressorRelay.off();
+      compressorDebounceCounter = 0;
+    }
+  } else {
     compressorRelay.off();
-    RODashboard.publish("Compressor", true);
-  } else if(pressure <= compressorMinPressure) {
-    compressorRelay.on();
-    RODashboard.publish("Compressor", false);
+    compressorDebounceCounter = 0;
   }
+  
 
   // Cannon Arming Buttons
   if(leftCannonArmButton()) {
@@ -141,11 +183,13 @@ void enabled() {
     cannonsArmed = cannonsArmed & ~rightCannonID;
   }
 
+
   // Cannon Trigger Pulled, Queue Charge Timer
   if(cannonTriggerButton() && cannonsArmed && !cannonsLock) {
-    cannonChargeTimer.queue(cannonChargeTime);
     cannonsLock = cannonsArmed;
+    cannonChargeTimer.queue(cannonChargeTime);
   }
+
 
   // Cancel Charge Sequence if anything changes after lock set
   if(cannonChargeTimer.isActive()) {
@@ -153,6 +197,7 @@ void enabled() {
       cannonChargeTimer.cancel();
     }
   }
+
 
   // Fire the Armed Cannons, Queue Shutoff Timer
   if(cannonChargeTimer.ready()) {
@@ -165,11 +210,13 @@ void enabled() {
     cannonShutoffTimer.queue(cannonFireTime);
   }
 
+
   // Shutoff Cannons
   if(cannonShutoffTimer.ready()) {
     leftCannonRelay.off();
     rightCannonRelay.off();
   }
+
 
   // Reset Arming Lock when Trigger is Released
   if(cannonsLock && !cannonTriggerButton()) {
@@ -194,7 +241,6 @@ void disabled() {
 
   // Turn off Compressor
   compressorRelay.off();
-  RODashboard.publish("Compressor", false);
 
 }
 
@@ -204,8 +250,13 @@ void disabled() {
  */
 void timedtasks() {
   RODashboard.publish("Uptime (s)", ROStatus.uptimeSeconds());
-  RODashboard.publish("Voltage (v)", (voltageDivider.read()*voltageDividerStep));
+  RODashboard.publish("Batt Voltage (v)", (voltageDivider.read()*voltageDividerStep));
   RODashboard.publish("Pressure (psi)", (pressureTransducer.read()*pressureTransducerStep));
+  RODashboard.publish("Target Pressure (psi)", compressorPressureSetpoint);
+  
+  RODashboard.publish("Compressor State", compressorRelay.read());
+  RODashboard.publish("Compressor Killswitch", compressorCutoffState);
+  
 }
 
 
