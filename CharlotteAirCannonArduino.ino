@@ -11,6 +11,7 @@
 #define ANALOG_RESOLUTION 1024 // 10-bit
 #define PWM_NEUTRAL 127 // 0.0
 
+
 // Controllers
 const uint8_t driverControllerUSB = 1;
 
@@ -47,8 +48,8 @@ ROAnalog pressureTransducer(pressureTransducerAnalog);
 // Drivetrain Variables
 int8_t driveSpeedAxis() { return map(driverController.leftY(), 255, 0, -128, 127); /* inverted */ }
 int8_t driveRotationAxis() { return map(driverController.leftX(),0, 255, -128, 127); }
-const int8_t driveMinSpeed = -128;
-const int8_t driveMaxSpeed = 127;
+const int8_t driveMinSpeed = -96;
+const int8_t driveMaxSpeed = 96;
 
 // Compressor Variables
 bool compressorRaiseSetpointButton() { return driverController.dPadUp(); }
@@ -56,8 +57,8 @@ bool compressorLowerSetpointButton() { return driverController.dPadDown(); }
 bool compressorCutoffButton() { return driverController.btnRShoulder(); }
 const uint8_t compressorPressureSetpointStep = 5; //psi
 const uint8_t compressorPressureMin = 20; //psi
-const uint8_t compressorPressureMax = 100; //psi
-const uint8_t compressorDebounceMagnitude = 10;
+const uint8_t compressorPressureMax = 70; //psi
+const uint8_t compressorDebounceMagnitude = 50;
 bool compressorRaiseSetpointButtonLastState = false;
 bool compressorLowerSetpointButtonLastState = false;
 uint8_t compressorPressureSetpoint = 60; //psi
@@ -79,7 +80,7 @@ const uint8_t cannonLiftMaxSpeed = 192; // 0.5
 bool leftCannonArmButton() { return driverController.btnA(); }
 bool rightCannonArmButton() { return driverController.btnB(); }
 bool cannonTriggerButton() { return (driverController.lTrigger() == 255); }
-const uint16_t cannonChargeTime = 5000; //milliseconds
+const uint16_t cannonChargeTime = 2500; //milliseconds
 const uint16_t cannonFireTime = 150; // milliseconds
 const uint8_t unarmedCannonID = 0x00;
 const uint8_t leftCannonID = 0x01;
@@ -117,6 +118,14 @@ void enabled() {
   // Drivetrain Control
   int8_t driveSpeed = driveSpeedAxis();
   int8_t driveRotation = driveRotationAxis();
+
+  // Joystick Deadzones
+  if(abs(driveSpeed) <= 10) {
+    driveSpeed = 0;
+  }
+  if(abs(driveRotation) <= 10) {
+    driveRotation = 0;
+  }
   
   uint8_t leftDriveSpeed = map(constrain(driveSpeed+driveRotation, driveMinSpeed, driveMaxSpeed), -128, 127, 255, 0);
   uint8_t rightDriveSpeed = map(constrain(driveSpeed-driveRotation, driveMinSpeed, driveMaxSpeed), -128, 127, 0, 255);
@@ -128,30 +137,6 @@ void enabled() {
   // Cannon Lift Control
   uint8_t cannonLiftSpeed = constrain(cannonLiftAxis(), cannonLiftMinSpeed, cannonLiftMaxSpeed);
   cannonLiftMotor.write(cannonLiftSpeed);
-
-  // Compressor Setpoint Control
-  if(compressorRaiseSetpointButton() && !compressorRaiseSetpointButtonLastState) {
-    compressorPressureSetpoint += compressorPressureSetpointStep;
-    if(compressorPressureSetpoint > compressorPressureMax) {
-      compressorPressureSetpoint = compressorPressureMax;
-    }
-  }
-  
-  if(compressorLowerSetpointButton() && !compressorLowerSetpointButtonLastState) {
-    compressorPressureSetpoint -= compressorPressureSetpointStep;
-    if(compressorPressureSetpoint < compressorPressureMin) {
-      compressorPressureSetpoint = compressorPressureMin;
-    }
-  }
-
-  compressorRaiseSetpointButtonLastState = compressorRaiseSetpointButton();
-  compressorLowerSetpointButtonLastState = compressorLowerSetpointButton();
-
-  // Compressor Cutoff Control
-  if(compressorCutoffButton() && !compressorCutoffButtonLastState) {
-    compressorCutoff = !compressorCutoff;
-  }
-  compressorCutoffButtonLastState = compressorCutoffButton();
   
   // Compressor Control
   float pressure = pressureTransducer.read()*pressureTransducerStep;
@@ -249,6 +234,32 @@ void disabled() {
  * This is also a good spot to put driver station publish code
  */
 void timedtasks() {
+  // Compressor Setpoint Control
+  if(compressorRaiseSetpointButton() && !compressorRaiseSetpointButtonLastState) {
+    compressorPressureSetpoint += compressorPressureSetpointStep;
+    if(compressorPressureSetpoint > compressorPressureMax) {
+      compressorPressureSetpoint = compressorPressureMax;
+    }
+  }
+  
+  if(compressorLowerSetpointButton() && !compressorLowerSetpointButtonLastState) {
+    compressorPressureSetpoint -= compressorPressureSetpointStep;
+    if(compressorPressureSetpoint < compressorPressureMin) {
+      compressorPressureSetpoint = compressorPressureMin;
+    }
+  }
+
+  compressorRaiseSetpointButtonLastState = compressorRaiseSetpointButton();
+  compressorLowerSetpointButtonLastState = compressorLowerSetpointButton();
+
+
+  // Compressor Cutoff Control
+  if(compressorCutoffButton() && !compressorCutoffButtonLastState) {
+    compressorCutoff = !compressorCutoff;
+  }
+  compressorCutoffButtonLastState = compressorCutoffButton();
+
+  
   RODashboard.publish("Uptime (s)", ROStatus.uptimeSeconds());
   RODashboard.publish("Batt Voltage (v)", (voltageDivider.read()*voltageDividerStep));
   RODashboard.publish("Pressure (psi)", (pressureTransducer.read()*pressureTransducerStep));
@@ -256,7 +267,6 @@ void timedtasks() {
   
   RODashboard.publish("Compressor State", compressorRelay.read());
   RODashboard.publish("Compressor Killswitch", compressorCutoff);
-  
 }
 
 
