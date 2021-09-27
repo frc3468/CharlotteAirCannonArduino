@@ -59,12 +59,14 @@ const uint8_t compressorPressureSetpointStep = 5; //psi
 const uint8_t compressorPressureMin = 20; //psi
 const uint8_t compressorPressureMax = 70; //psi
 const uint8_t compressorDebounceMagnitude = 50;
+const uint16_t compressorDebounceTime = 10000; // milliseconds
 bool compressorRaiseSetpointButtonLastState = false;
 bool compressorLowerSetpointButtonLastState = false;
 uint8_t compressorPressureSetpoint = 60; //psi
 uint8_t compressorDebounceCounter = 0;
 bool compressorCutoffButtonLastState = false;
 bool compressorCutoff = false;
+ROTimer compressorShutoffTimer;
 
 // TODO Impliment Cycle Time Limits(?)
 
@@ -145,7 +147,11 @@ void enabled() {
     if(pressure <= compressorPressureSetpoint) {
       compressorRelay.on();
       compressorDebounceCounter = 0;
-    } else if(++compressorDebounceCounter >= compressorDebounceMagnitude) {
+    } else if(!compressorShutoffTimer.isActive() && ++compressorDebounceCounter >= compressorDebounceMagnitude) {
+      compressorShutoffTimer.queue(compressorDebounceTime);
+    }
+
+    if(compressorShutoffTimer.ready()) {
       compressorRelay.off();
       compressorDebounceCounter = 0;
     }
